@@ -1,0 +1,794 @@
+// EDE.magma
+// Version 1.1
+// 30 April 2025
+
+/* 
+This file contains Magma code related to the paper
+    Powers of 3 with few nonzero bits and a conjecture of Erdos
+by Vassil S. Dimitrov and Everett W. Howe, which will appear in the Rocky 
+Mountain Journal of Mathematics.
+
+The paper considers exponential Diophantine equations of the form
+    q^x = p^{a_1} + ... + p^{a_n}
+for distinct primes p and q and various values of n, with the further 
+restriction that the summands on the right hand side be distinct. This file 
+contains Magma code for the case p = 2 and q = 3 (so that we are trying to 
+determine which powers of 3 have few nonzero bits when expressed in binary) and
+on the case p = 3 and q = 2 (related to a conjecture of Erdos that there are 
+only three solutions to the equation, even if n is allowed to vary, 
+corresponding to x = 0, x = 2, and x = 8).
+
+To find the powers of 3 that can be written as the sum of 10 distinct powers
+of 2, for example, enter:
+  P3_as_sum_of_P2(10);
+
+Likewise, to find the powers of 2 that can be written as the sum of 10 distinct
+powers of 3, enter:
+  P2_as_sum_of_P3(10);
+  
+*/
+
+/*
+VERSION HISTORY:
+Version 1.1: First GitHub version. Bibliographic info for paper added.
+Version 1.0: First public version. Comments modified, code unchanged.
+Version 0.9: First semi-public version. Comments may still need clarification,
+             and formatting has not been polished.
+*/
+
+
+function P3_as_sum_of_P2(n : part := 0, number := 1)
+  // Attempt to find all powers of 3 that can be written as the sum of n
+  // distinct powers of 2. 
+  // We take the list of solutions modulo the first modulus, and then cut down
+  // the list by taking those solutions whose index on the list is congruent
+  // to "part" modulo "number." This allows us to parallelize the computation,
+  // with several processes each looking at a different congruence class modulo
+  // "number". The default values part := 0 and number := 1 will result in one
+  // process considering all of the cases.
+
+  
+  if n eq 1 then return [[0, 0]], 2; end if;
+  if n eq 2 then return [[1, 0, 1], [2, 0, 3]], 80; end if;
+
+  // Now we assume that n > 2.
+
+  cr := CodeToString(13); // Carriage return
+  
+  forced_moduli := 
+[
+3^3 * 19,
+5 * 13 * 37 * 109,
+241 * 433,
+17,
+2^2,
+38737,
+97 * 577,
+257 * 673,
+2^4,
+193 * 1153, 
+6337,
+65537,
+2^8,
+641, // * 3457,
+769,
+274177,
+18433,
+101377,
+2424833,
+12289,
+974849,
+114689,
+39714817,
+1179649,
+7908360193,
+2^4,
+171048961,
+786433,
+14155777,
+13631489,
+113246209,
+319489,
+1084521185281,
+2^2,
+7348420609,
+2^2,
+448203325441,
+1107296257,
+167772161,
+2,
+74490839041,
+2,
+246423748609,
+2^2,
+29796335617,
+3221225473,
+77309411329,
+2^2,
+5469640851457,
+28114855919617,
+1095981164658689,
+2^3,
+87211,
+5566277615617,
+25048249270273,
+2,
+942556342910977,
+2^3,
+206158430209,
+2748779069441,
+2^2,               // This is the last factor needed for powers of 3 with 22 bits.
+39582418599937,
+6597069766657,
+2917004348489729,
+2,
+46179488366593,
+5317238231924737,
+1108307720798209,
+2,
+474989023199233,
+735916326610010113,
+1899956092796929,
+2^3,
+2411677600456900609,
+2,
+4222124650659841,
+2^2,
+7427561685440790529,
+2
+];    
+    
+  // Variables names in all caps should not be modified lightly.
+  // Unchangeable:
+
+  LHS_PRIME := 3;
+  RHS_PRIME := 2;
+  TERMS := n;
+  
+  // We will keep track of:
+  // MODULUS: 
+  //      The current modulus we are working with
+  // LHS_VALUATION:
+  //      The valuation of MODULUS at LHS_PRIME
+  // LHS_ORDER: 
+  //      The order of LHSprime in the multiplicative group of the integers
+  //      modulo (MODULUS / LHS_PRIME^LHS_VALUATION)
+  // RHS_VALUATION:
+  //      The valuation of MODULUS at RHS_PRIME
+  // RHS_ORDER: 
+  //      The order of RHSprime in the multiplicative group of the integers
+  //      modulo (MODULUS / RHS_PRIME^RHS_VALUATION)
+  // SOLUTIONS: 
+  //      The list of exponents (x, a_1, ..., a_r) that solve the exponential
+  //      equation modulo MODULUS. The exponents a_i are taken from the
+  //      interval [0..RHS_ORDER + RHS_VALUATION - 1], with the understanding
+  //      that any exponent a_i that is at least RHS_VALUATION could be
+  //      replaced by a_i + c*RHS_ORDER for a non-negative integer c and the
+  //      exponents will still provide a solution to the equation. (Likewise 
+  //      with x, with RHS replaced with LHS throughout.) We assume that
+  //      a_1 = 0 and the rest of the a_i are in nondecreasing order, and that
+  //      no two a_i that are in the range [0..RHS_VALUATION - 1] are equal to
+  //      one another.
+  
+  // We will start with all of the solutions modulo 8176.
+  
+  MODULUS := 8176;
+  LHS_VALUATION := Valuation(MODULUS, LHS_PRIME); // = 0
+  RHS_VALUATION := Valuation(MODULUS, RHS_PRIME); // = 4
+  LHS_ORDER := Order(Integers(MODULUS div LHS_PRIME^LHS_VALUATION)!LHS_PRIME); // = 12
+  RHS_ORDER := Order(Integers(MODULUS div RHS_PRIME^RHS_VALUATION)!RHS_PRIME); // = 9
+
+
+
+  SOLUTIONS := [];
+
+  // The possible RHS exponents are [0..12]. 0 is used exactly once, while 
+  // 1, 2, and 3 are used at most once. The possible LHS exponents are [0..11].
+
+  time 
+  for a1 in [0..Min(1,TERMS-1)] do
+    for a2 in [0..Min(1,TERMS-1-a1)] do
+      for a3 in [0..Min(1,TERMS-1-a1-a2)] do
+        for a4 in [0..TERMS-1-a1-a2-a3] do
+          for a5 in [0..TERMS-1-a1-a2-a3-a4] do
+            for a6 in [0..TERMS-1-a1-a2-a3-a4-a5] do
+              for a7 in [0..TERMS-1-a1-a2-a3-a4-a5-a6] do
+                for a8 in [0..TERMS-1-a1-a2-a3-a4-a5-a6-a7] do
+                  for a9 in [0..TERMS-1-a1-a2-a3-a4-a5-a6-a7-a8] do
+                    for a10 in [0..TERMS-1-a1-a2-a3-a4-a5-a6-a7-a8-a9] do
+                      for a11 in [0..TERMS-1-a1-a2-a3-a4-a5-a6-a7-a8-a9-a10] do
+                        a12 := TERMS-1-a1-a2-a3-a4-a5-a6-a7-a8-a9-a10-a11;
+                        x := -1;
+                        case Integers(MODULUS)!(1 + a1*2   + a2*4   + a3*8   + a4 *16   + a5 *32   + a6 *64 
+                                                  + a7*128 + a8*256 + a9*512 + a10*1024 + a11*2048 + a12*4096):
+                          when Integers(MODULUS)!3^0 : x :=  0;
+                          when Integers(MODULUS)!3^1 : x :=  1;
+                          when Integers(MODULUS)!3^2 : x :=  2;
+                          when Integers(MODULUS)!3^3 : x :=  3;
+                          when Integers(MODULUS)!3^4 : x :=  4;
+                          when Integers(MODULUS)!3^5 : x :=  5;
+                          when Integers(MODULUS)!3^6 : x :=  6;
+                          when Integers(MODULUS)!3^7 : x :=  7;
+                          when Integers(MODULUS)!3^8 : x :=  8;
+                          when Integers(MODULUS)!3^9 : x :=  9;
+                          when Integers(MODULUS)!3^10: x := 10;
+                          when Integers(MODULUS)!3^11: x := 11;
+                        end case;
+                    
+                        if x ne -1 then 
+                          SOLUTIONS cat:= [[x, 0] cat [ 1 : i in [1..a1 ]]
+                                                  cat [ 2 : i in [1..a2 ]]
+                                                  cat [ 3 : i in [1..a3 ]]
+                                                  cat [ 4 : i in [1..a4 ]]
+                                                  cat [ 5 : i in [1..a5 ]]
+                                                  cat [ 6 : i in [1..a6 ]]
+                                                  cat [ 7 : i in [1..a7 ]]
+                                                  cat [ 8 : i in [1..a8 ]]
+                                                  cat [ 9 : i in [1..a9 ]]
+                                                  cat [10 : i in [1..a10]]
+                                                  cat [11 : i in [1..a11]]
+                                                  cat [12 : i in [1..a12]]
+                                                  ];
+                        end if;
+
+                      end for;
+                    end for;
+                  end for;
+                end for;
+              end for;
+            end for;
+          end for;
+        end for;
+      end for;
+    end for;
+  end for;
+
+  Sort(~SOLUTIONS);
+
+  SOLUTIONS := [SOLUTIONS[i] : i in [1..#SOLUTIONS] | part eq i mod number];
+  
+  print Factorization(MODULUS);
+  print "Total number of solutions with respect to this modulus:", #SOLUTIONS;
+  
+
+  count := 1;
+  
+  repeat
+    bestp := forced_moduli[count];
+    count +:= 1;
+
+    MODULUS_new := MODULUS * bestp;
+    LHS_VALUATION_new := Valuation(MODULUS_new, LHS_PRIME);
+    RHS_VALUATION_new := Valuation(MODULUS_new, RHS_PRIME);
+    LHS_ORDER_new := Order(Integers(MODULUS_new div LHS_PRIME^LHS_VALUATION_new)!LHS_PRIME);
+    RHS_ORDER_new := Order(Integers(MODULUS_new div RHS_PRIME^RHS_VALUATION_new)!RHS_PRIME);
+    SOLUTIONS_new := {};
+
+
+    print "========================================================================";
+    print "Adding in a factor of", bestp;
+    print LHS_ORDER_new/LHS_ORDER, RHS_ORDER_new/RHS_ORDER;
+
+    print #SOLUTIONS;
+
+    // Some information we may use multiple times:
+    
+    if IsPrime(bestp) and bestp ne LHS_PRIME then
+      log_LHS_prime := Log(GF(bestp)!LHS_PRIME);
+      index_LHS_prime := GCD(bestp-1,log_LHS_prime);
+      // What must the order of an element of GF(p)^* be divisible by,
+      // in order for it to be a power of LHS_PRIME?
+      group_order := (bestp-1) div index_LHS_prime;
+    else
+      // Dummy values.
+      log_LHS_prime := 0;
+      index_LHS_prime := 1;
+      group_order := 1;
+    end if;
+
+
+    // Find the lifts of each solution.
+    time
+    for i in [1..#SOLUTIONS] do 
+      printf "%o%o  ", cr, i;
+
+      solution := SOLUTIONS[i];
+      RHS_lifts := [* [] : i in [1..TERMS] *];
+      RHS_lifts[1] := [0];
+      for j in [2..TERMS] do
+        value := solution[j+1];
+        lifts := [];
+        if value lt RHS_VALUATION then
+          lifts cat:= [value];
+          // If value is less than RHS_VALUATION that's the only lift. Otherwise:
+        else
+          while value le RHS_ORDER_new + RHS_VALUATION_new - 1 do
+            lifts cat:= [value];
+            value +:= RHS_ORDER;
+          end while;
+        end if;
+        RHS_lifts[j] := lifts;
+      end for;
+
+      RHS_values := [* [] : i in [1..TERMS] *];
+      RHS_values[1] := [Integers(MODULUS_new)!1];
+      for j in [2..TERMS] do
+        RHS_values[j] := [(Integers(MODULUS_new)!RHS_PRIME)^a : a in RHS_lifts[j]];
+      end for;
+
+
+
+      // How many LHS lifts?
+      
+      if solution[1] lt LHS_VALUATION then
+        number_of_LHS_lifts := 1;
+      else
+        number_of_LHS_lifts := LHS_ORDER_new / LHS_ORDER;
+        if solution[1] lt LHS_VALUATION_new then
+          number_of_LHS_lifts +:=1;
+        end if;
+      end if;
+      
+      if number_of_LHS_lifts gt &*[#RHS_lifts[j] : j in [1..TERMS]] 
+            and IsPrime(bestp) 
+            and bestp ne LHS_PRIME
+            and bestp ne RHS_PRIME
+            and GCD(MODULUS, bestp) eq 1 then
+
+        // We are in the "unbalanced" case.
+        
+        right_indices := CartesianProduct( <[1..#RHS_values[j]] : j in [1..TERMS]> );
+
+        answers := {};
+        for c in right_indices do
+          RHS := [RHS_values[i][c[i]] : i in [1..TERMS]];
+          sum := &+RHS;
+          sum_newpart := GF(bestp)!sum;
+          if sum_newpart ne 0 then
+            log_sum := Log(sum_newpart);
+            index_sum := GCD(bestp-1,log_sum);
+            
+            if 0 eq index_sum mod index_LHS_prime then
+              relative_log := (Integers((bestp-1) div index_LHS_prime)!(log_sum div index_LHS_prime)) / 
+                              (Integers((bestp-1) div index_LHS_prime)!(log_LHS_prime div index_LHS_prime));
+              relative_log := Integers()!relative_log;
+           
+              // Is relative_log modulo group_order consistent with
+              // x (= solution[1]) modulo LHS_ORDER?
+          
+              lifted_value := CRT([solution[1],relative_log],[LHS_ORDER,group_order]);
+              if lifted_value ge 0 then
+              // Logs are consistent with one another.
+              // BUT! The lifted_value cannot be less than LHS_VALUATION unless
+              // it is equal to solution[1].
+                while lifted_value lt LHS_VALUATION and lifted_value ne solution[1] do 
+                  lifted_value +:= LHS_ORDER_new;
+                end while;
+                answers join:= { [lifted_value] cat [RHS_lifts[i][c[i]] : i in [1..TERMS]] };
+              end if;
+            end if;
+          end if;
+        end for;
+        answers := Sort([a : a in answers]);
+        answers_reduced := {};
+        for a in answers do
+          doubles := [j : j in [2..TERMS] | a[j] eq a[j+1]];
+          if #doubles eq 0 or a[doubles[1]] ge RHS_VALUATION_new then
+            answers_reduced join:= {a};
+          end if;
+        end for;
+
+      else
+        // We are in the "balanced" case.
+  
+        value := solution[1];
+        lifts := [];
+        if value lt LHS_VALUATION then
+          lifts cat:= [value];
+          // If value is less than LHS_VALUATION that's the only lift. Otherwise:
+        else
+          while value le LHS_ORDER_new + LHS_VALUATION_new - 1 do
+            lifts cat:= [value];
+            value +:= LHS_ORDER;
+          end while;
+        end if;
+        LHS_lifts := lifts;
+
+        LHS_values := [(Integers(MODULUS_new)!LHS_PRIME)^a : a in LHS_lifts];
+  
+        work := [Max(#LHS_values * &*[#RHS_values[j] : j in [1..k]], &*[#RHS_values[j] : j in [k+1..TERMS]]) : k in [1..TERMS-1]];
+        minimum, index := Min(work);
+  
+        left_indices  := CartesianProduct( Append(<[1..#RHS_values[j]] : j in [1..index]>, [1..#LHS_values]) );
+        right_indices := CartesianProduct( <[1..#RHS_values[j]] : j in [index+1..TERMS]> );
+  
+  
+        left_half_list  := Sort([ [Integers()!(LHS_values[c[#c]] - &+[RHS_values[j][c[j]] : j in [1..#c-1]])]
+                              cat [c[j] : j in [1..#c]] : c in left_indices ]);
+        right_half_list := Sort([ [Integers()!&+[RHS_values[index + j][c[j]] : j in [1..#c]]] 
+                              cat [c[j] : j in [1..#c]] : c in right_indices ]);
+                            
+        left_half_values  := {a[1] : a in  left_half_list};
+        right_half_values := {a[1] : a in right_half_list};
+  
+        common_values := left_half_values meet right_half_values;
+  
+        answers_reduced := {};
+        for cv in common_values do
+          for  left in [a : a in  left_half_list | a[1] eq cv], 
+              right in [a : a in right_half_list | a[1] eq cv] do
+            LHSlift := LHS_lifts[left[#left]];
+            RHSlift := [RHS_lifts[j-1][left[j]] : j in [2..#left-1]] cat [RHS_lifts[j+index-1][right[j]] : j in [2..#right]];
+            RHSlift := Sort(RHSlift);
+            doubles := [j : j in [1..TERMS-1] | RHSlift[j] eq RHSlift[j+1]];
+            if #doubles eq 0 or RHSlift[doubles[1]] ge RHS_VALUATION_new then
+              answers_reduced join:= {[LHSlift] cat RHSlift};
+            end if;
+          end for;
+        end for;
+
+      end if;
+      
+      SOLUTIONS_new join:= answers_reduced;
+    end for;
+
+    SOLUTIONS_new := Sort([a : a in SOLUTIONS_new]);
+    print "";
+    MODULUS := MODULUS_new;
+    LHS_VALUATION := LHS_VALUATION_new;
+    RHS_VALUATION := RHS_VALUATION_new;
+    LHS_ORDER := LHS_ORDER_new;
+    RHS_ORDER := RHS_ORDER_new;
+    SOLUTIONS := SOLUTIONS_new;
+    
+    print Factorization(MODULUS);
+    print "Total number of solutions with respect to this modulus:", #SOLUTIONS;
+
+  until #SOLUTIONS eq 0 or Max([s[#s] : s in SOLUTIONS]) lt RHS_VALUATION;
+  
+  return SOLUTIONS, MODULUS;
+end function;
+
+
+
+function P2_as_sum_of_P3(n : part := 0, number := 1)
+  // Attempt to find all powers of 2 that can be written as the sum of n
+  // distinct powers of 3.
+  // We take the list of solutions modulo the first modulus, and then cut down
+  // the list by taking those solutions whose index on the list is congruent
+  // to "part" modulo "number." This allows us to parallelize the computation,
+  // with several processes each looking at a different congruence class modulo
+  // "number". The default values part := 0 and number := 1 will result in one 
+  // process considering all of the cases.
+  
+  if n eq 1 then return [[0, 0]], 1; end if;
+  if n eq 2 then return [[2, 0, 1]], 16; end if;
+  
+
+  // Now we assume that n > 2.
+
+  cr := CodeToString(13); // Carriage return
+
+
+  forced_moduli := [7 * 19 * 37,
+                    5 * 73,
+                    530713,
+                    3^3,
+                    41 * 6481,
+                    282429005041,
+                    3^6,
+                    109 * 19441,
+                    150094634909578633,
+                    3^6
+                   ];
+
+  // Variables names in all caps should not be modified lightly.
+  // Unchangeable:
+  LHS_PRIME := 2;
+  RHS_PRIME := 3;
+  TERMS := n;
+  
+  // We will keep track of:
+  // MODULUS: 
+  //      The current modulus we are working with
+  // LHS_VALUATION: 
+  //      The valuation of MODULUS at LHS_PRIME
+  // LHS_ORDER: 
+  //      The order of LHSprime in the multiplicative group of the integers
+  //      modulo (MODULUS / LHS_PRIME^LHS_VALUATION)
+  // RHS_VALUATION: 
+  //      The valuation of MODULUS at RHS_PRIME
+  // RHS_ORDER: 
+  //      The order of RHSprime in the multiplicative group of the integers
+  //      modulo (MODULUS / RHS_PRIME^RHS_VALUATION)
+  // SOLUTIONS: 
+  //      The list of exponents (x, a_1, ..., a_r) that solve the exponential
+  //      equation modulo MODULUS. The exponents a_i are taken from the
+  //      interval [0..RHS_ORDER + RHS_VALUATION - 1], with the understanding
+  //      that any exponent a_i that is at least RHS_VALUATION could be
+  //      replaced by a_i + c*RHS_ORDER for a non-negative integer c and the
+  //      exponents will still provide a solution to the equation. (Likewise
+  //      with x, with RHS replaced with LHS throughout.) We assume that
+  //      a_1 = 0 and the rest of the a_i are in nondecreasing order, and that
+  //      no two a_i that are in the range [0..RHS_VALUATION - 1] are equal to
+  //      one another.
+  
+
+  MODULUS := 1594242;
+  LHS_VALUATION := Valuation(MODULUS, LHS_PRIME); // = 1
+  RHS_VALUATION := Valuation(MODULUS, RHS_PRIME); // = 4
+  LHS_ORDER := Order(Integers(MODULUS div LHS_PRIME^LHS_VALUATION)!LHS_PRIME); // = 756
+  RHS_ORDER := Order(Integers(MODULUS div RHS_PRIME^RHS_VALUATION)!RHS_PRIME); // = 9
+
+
+
+  SOLUTIONS := [];
+
+  // The possible RHS exponents are [0..12]. 0 is used exactly once, while 1, 2,
+  // and 3 are each used at most once. The possible LHS exponents are [1..756].
+
+  templog := AssociativeArray();
+  goodvalues := {};
+  powers := [RHS_PRIME^i mod MODULUS : i in [1..12]];
+  t := Integers(MODULUS)!1;
+  for i in [0..756] do
+    goodvalues join:= {t};
+    templog[Integers()!t] := i;
+    t*:=LHS_PRIME;
+  end for;
+  
+  time 
+  for a1 in [0..Min(1,TERMS-1)] do
+    for a2 in [0..Min(1,TERMS-1-a1)] do
+      for a3 in [0..Min(1,TERMS-1-a1-a2)] do
+        for a4 in [0..TERMS-1-a1-a2-a3] do
+          for a5 in [0..TERMS-1-a1-a2-a3-a4] do
+            for a6 in [0..TERMS-1-a1-a2-a3-a4-a5] do
+              for a7 in [0..TERMS-1-a1-a2-a3-a4-a5-a6] do
+                for a8 in [0..TERMS-1-a1-a2-a3-a4-a5-a6-a7] do
+                  for a9 in [0..TERMS-1-a1-a2-a3-a4-a5-a6-a7-a8] do
+                    for a10 in [0..TERMS-1-a1-a2-a3-a4-a5-a6-a7-a8-a9] do
+                      for a11 in [0..TERMS-1-a1-a2-a3-a4-a5-a6-a7-a8-a9-a10] do
+
+                        a12 := TERMS-1-a1-a2-a3-a4-a5-a6-a7-a8-a9-a10-a11;
+
+                        RHS_value := Integers(MODULUS)!
+                                     (1 + a1 *powers[ 1] + a2 *powers[ 2] + a3 *powers[ 3] + a4 *powers[ 4] 
+                                        + a5 *powers[ 5] + a6 *powers[ 6] + a7 *powers[ 7] + a8 *powers[ 8] 
+                                        + a9 *powers[ 9] + a10*powers[10] + a11*powers[11] + a12*powers[12]);
+                        if RHS_value in goodvalues then
+                          SOLUTIONS cat:= [[templog[Integers()!RHS_value], 0]
+                                           cat [  1 : i in [1..a1  ]]
+                                           cat [  2 : i in [1..a2  ]]
+                                           cat [  3 : i in [1..a3  ]]
+                                           cat [  4 : i in [1..a4  ]]
+                                           cat [  5 : i in [1..a5  ]]
+                                           cat [  6 : i in [1..a6  ]]
+                                           cat [  7 : i in [1..a7  ]]
+                                           cat [  8 : i in [1..a8  ]]
+                                           cat [  9 : i in [1..a9  ]]
+                                           cat [ 10 : i in [1..a10 ]]
+                                           cat [ 11 : i in [1..a11 ]]
+                                           cat [ 12 : i in [1..a12 ]]
+                                          ];
+                        end if;
+                                                          
+                      end for;
+                    end for;
+                  end for;
+                end for;
+              end for;
+            end for;
+          end for;
+        end for;
+      end for;
+    end for;
+  end for;
+
+  Sort(~SOLUTIONS);
+
+  SOLUTIONS := [SOLUTIONS[i] : i in [1..#SOLUTIONS] | part eq i mod number];
+  
+  print Factorization(MODULUS);
+  print "Total number of solutions with respect to this modulus:", #SOLUTIONS;
+  
+
+  count := 1;
+  
+  add3 := false;
+  
+  repeat
+    bestp := forced_moduli[count];
+    count +:= 1;
+
+    MODULUS_new := MODULUS * bestp;
+    LHS_VALUATION_new := Valuation(MODULUS_new, LHS_PRIME);
+    RHS_VALUATION_new := Valuation(MODULUS_new, RHS_PRIME);
+    LHS_ORDER_new := Order(Integers(MODULUS_new div LHS_PRIME^LHS_VALUATION_new)!LHS_PRIME);
+    RHS_ORDER_new := Order(Integers(MODULUS_new div RHS_PRIME^RHS_VALUATION_new)!RHS_PRIME);
+    SOLUTIONS_new := {};
+
+
+    print "========================================================================";
+    print "Adding in a factor of", bestp;
+    print LHS_ORDER_new/LHS_ORDER, RHS_ORDER_new/RHS_ORDER;
+
+    print #SOLUTIONS;
+
+    // Some information we may use multiple times:
+    
+    if IsPrime(bestp) and bestp ne LHS_PRIME then
+      log_LHS_prime := Log(GF(bestp)!LHS_PRIME);
+      index_LHS_prime := GCD(bestp-1,log_LHS_prime);
+      // What must the order of an element of GF(p)^* be divisible by.
+      // in order for it to be a power of LHS_PRIME?
+      group_order := (bestp-1) div index_LHS_prime;
+    else
+      // Dummy values.
+      log_LHS_prime := 0;
+      index_LHS_prime := 1;
+      group_order := 1;
+    end if;
+
+
+    // Find the lifts of each solution.
+    time
+    for i in [1..#SOLUTIONS] do 
+      printf "%o%o  ", cr, i;
+
+      solution := SOLUTIONS[i];
+      RHS_lifts := [* [] : i in [1..TERMS] *];
+      RHS_lifts[1] := [0];
+      for j in [2..TERMS] do
+        value := solution[j+1];
+        lifts := [];
+        if value lt RHS_VALUATION then
+          lifts cat:= [value];
+          // If value is less than RHS_VALUATION that's the only lift. Otherwise:
+        else
+          while value le RHS_ORDER_new + RHS_VALUATION_new - 1 do
+            lifts cat:= [value];
+            value +:= RHS_ORDER;
+          end while;
+        end if;
+        RHS_lifts[j] := lifts;
+      end for;
+
+      RHS_values := [* [] : i in [1..TERMS] *];
+      RHS_values[1] := [Integers(MODULUS_new)!1];
+      for j in [2..TERMS] do
+        RHS_values[j] := [(Integers(MODULUS_new)!RHS_PRIME)^a : a in RHS_lifts[j]];
+      end for;
+
+
+
+      // How many LHS lifts?
+      
+      if solution[1] lt LHS_VALUATION then
+        number_of_LHS_lifts := 1;
+      else
+        number_of_LHS_lifts := LHS_ORDER_new / LHS_ORDER;
+        if solution[1] lt LHS_VALUATION_new then
+          number_of_LHS_lifts +:=1;
+        end if;
+      end if;
+      
+      if number_of_LHS_lifts gt &*[#RHS_lifts[j] : j in [1..TERMS]] 
+            and IsPrime(bestp) 
+            and bestp ne LHS_PRIME
+            and bestp ne RHS_PRIME
+            and GCD(MODULUS, bestp) eq 1 then
+
+        // We are in the "unbalanced" case.
+        
+        right_indices := CartesianProduct( <[1..#RHS_values[j]] : j in [1..TERMS]> );
+
+        answers := {};
+        for c in right_indices do
+          RHS := [RHS_values[i][c[i]] : i in [1..TERMS]];
+          sum := &+RHS;
+          sum_newpart := GF(bestp)!sum;
+          if sum_newpart ne 0 then
+            log_sum := Log(sum_newpart);
+            index_sum := GCD(bestp-1,log_sum);
+            
+            if 0 eq index_sum mod index_LHS_prime then
+              relative_log := (Integers((bestp-1) div index_LHS_prime)!(log_sum div index_LHS_prime)) / 
+                              (Integers((bestp-1) div index_LHS_prime)!(log_LHS_prime div index_LHS_prime));
+              relative_log := Integers()!relative_log;
+           
+              // Is relative_log modulo group_order consistent with
+              // x (= solution[1]) modulo LHS_ORDER?
+          
+              lifted_value := CRT([solution[1],relative_log],[LHS_ORDER,group_order]);
+              if lifted_value ge 0 then
+              // Logs are consistent with one another.
+              // BUT! The lifted_value cannot be less than LHS_VALUATION unless
+              // it is equal to solution[1].
+                while lifted_value lt LHS_VALUATION and lifted_value ne solution[1] do 
+                  lifted_value +:= LHS_ORDER_new;
+                end while;
+                answers join:= { [lifted_value] cat [RHS_lifts[i][c[i]] : i in [1..TERMS]] };
+              end if;
+            end if;
+          end if;
+        end for;
+        answers := Sort([a : a in answers]);
+        answers_reduced := {};
+        for a in answers do
+          doubles := [j : j in [2..TERMS] | a[j] eq a[j+1]];
+          if #doubles eq 0 or a[doubles[1]] ge RHS_VALUATION_new then
+            answers_reduced join:= {a};
+          end if;
+        end for;
+
+      else
+        // We are in the "balanced" case.
+
+        value := solution[1];
+        lifts := [];
+        if value lt LHS_VALUATION then
+          lifts cat:= [value];
+          // If value is less than LHS_VALUATION that's the only lift. Otherwise:
+        else
+          while value le LHS_ORDER_new + LHS_VALUATION_new - 1 do
+            lifts cat:= [value];
+            value +:= LHS_ORDER;
+          end while;
+        end if;
+        LHS_lifts := lifts;
+
+        LHS_values := [(Integers(MODULUS_new)!LHS_PRIME)^a : a in LHS_lifts];
+  
+        work := [Max(#LHS_values * &*[#RHS_values[j] : j in [1..k]], &*[#RHS_values[j] : j in [k+1..TERMS]]) : k in [1..TERMS-1]];
+        minimum, index := Min(work);
+  
+        left_indices  := CartesianProduct( Append(<[1..#RHS_values[j]] : j in [1..index]>, [1..#LHS_values]) );
+        right_indices := CartesianProduct( <[1..#RHS_values[j]] : j in [index+1..TERMS]> );
+  
+  
+        left_half_list  := Sort([ [Integers()!(LHS_values[c[#c]] - &+[RHS_values[j][c[j]] : j in [1..#c-1]])]
+                              cat [c[j] : j in [1..#c]] : c in left_indices ]);
+        right_half_list := Sort([ [Integers()!&+[RHS_values[index + j][c[j]] : j in [1..#c]]] 
+                              cat [c[j] : j in [1..#c]] : c in right_indices ]);
+                            
+        left_half_values  := {a[1] : a in  left_half_list};
+        right_half_values := {a[1] : a in right_half_list};
+  
+        common_values := left_half_values meet right_half_values;
+  
+        answers_reduced := {};
+        for cv in common_values do
+          for  left in [a : a in  left_half_list | a[1] eq cv], 
+              right in [a : a in right_half_list | a[1] eq cv] do
+            LHSlift := LHS_lifts[left[#left]];
+            RHSlift := [RHS_lifts[j-1][left[j]] : j in [2..#left-1]] cat [RHS_lifts[j+index-1][right[j]] : j in [2..#right]];
+            RHSlift := Sort(RHSlift);
+            doubles := [j : j in [1..TERMS-1] | RHSlift[j] eq RHSlift[j+1]];
+            if #doubles eq 0 or RHSlift[doubles[1]] ge RHS_VALUATION_new then
+              answers_reduced join:= {[LHSlift] cat RHSlift};
+            end if;
+          end for;
+        end for;
+
+      end if;
+      
+      SOLUTIONS_new join:= answers_reduced;
+    end for;
+
+    SOLUTIONS_new := Sort([a : a in SOLUTIONS_new]);
+    print "";
+    MODULUS := MODULUS_new;
+    LHS_VALUATION := LHS_VALUATION_new;
+    RHS_VALUATION := RHS_VALUATION_new;
+    LHS_ORDER := LHS_ORDER_new;
+    RHS_ORDER := RHS_ORDER_new;
+    SOLUTIONS := SOLUTIONS_new;
+    
+
+    print Factorization(MODULUS);
+    print "Total number of solutions with respect to this modulus:", #SOLUTIONS;
+  until #SOLUTIONS eq 0 or Max([s[#s] : s in SOLUTIONS]) lt RHS_VALUATION;
+  
+  return SOLUTIONS, MODULUS;
+end function;
